@@ -30,7 +30,7 @@ inputs:
   build-flags:
     required: false
     type: string
-    default: '--all-warnings'
+    default: '--all-warnings --warnings-as-errors'
     description: Flags to pass to mix compile
   install-rebar:
     required: false
