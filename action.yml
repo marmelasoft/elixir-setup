@@ -157,6 +157,5 @@ runs:
     # Always rebuild PLT when a job is retried
     # (If they were cached at all, they'll be updated when we run mix dialyzer with no flags.)
     - name: Create PLTs
-      if: steps.plt-cache.outputs.cache-hit != 'true' || github.run_attempt != '1'
+      if: (steps.plt-cache.outputs.cache-hit != 'true' || github.run_attempt != '1') && inputs.cache-plts == 'true'
       run: mix dialyzer --plt
-      if: inputs.cache-plts == 'true'
