@@ -158,4 +158,5 @@ runs:
     # (If they were cached at all, they'll be updated when we run mix dialyzer with no flags.)
     - name: Create PLTs
       if: (steps.plt-cache.outputs.cache-hit != 'true' || github.run_attempt != '1') && inputs.cache-plts == 'true'
+      shell: sh
       run: mix dialyzer --plt
