@@ -6,15 +6,15 @@ branding:
   color: "purple"
 
 inputs:
-  # Required inputs
   otp-version:
-    required: true
     type: string
     description: OTP version to set up
   elixir-version:
-    required: true
     type: string
     description: Elixir version to set up
+  version-file:
+    type: string
+    description: a versions file (e.g. as used by `asdf`), which defines inputs
 
   # Optional inputs
   build-deps:
@@ -60,6 +60,7 @@ outputs:
   elixir-version:
     description: "Exact Elixir version selected by the BEAM setup step"
     value: ${{ steps.beam.outputs.elixir-version }}
+
 runs:
   using: "composite"
   steps:
