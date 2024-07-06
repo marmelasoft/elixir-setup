@@ -68,6 +68,7 @@ runs:
       uses: erlef/setup-beam@v1
       id: beam
       with:
+        version-type: strict
         version-file: ${{ inputs.version-file }}
 
     - name: Get deps cache
