@@ -78,30 +78,18 @@ runs:
         otp-version: ${{ inputs.otp-version }}
 
     - name: Get deps cache
-      uses: actions/cache@v4
+      uses: corca-ai/local-cache@v2
       with:
+        base: /home/runner/.cache/actions
         path: deps/
-        key: deps-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          deps-${{ inputs.cache-key }}-${{ runner.os }}-
+        key: deps-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
 
     - name: Get build cache
-      uses: actions/cache@v4
-      id: build-cache
+      uses: corca-ai/local-cache@v2
       with:
+        base: /home/runner/.cache/actions
         path: _build/${{env.MIX_ENV}}/
-        key: build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-
-
-    - name: Get Hex cache
-      uses: actions/cache@v4
-      id: hex-cache
-      with:
-        path: ~/.hex
-        key: build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-
+        key: build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-${{ hashFiles('**/mix.lock') }}
 
     # In my experience, I have issues with incremental builds maybe 1 in 100
     # times that are fixed by doing a full recompile.
