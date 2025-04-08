@@ -77,18 +77,31 @@ runs:
         elixir-version: ${{ inputs.elixir-version }}
         otp-version: ${{ inputs.otp-version }}
 
-    # Restore cache before building
-    - name: Restore local cache
-      shell: bash
-      run: ${{ github.action_path }}/localcache.sh restore deps-${{ inputs.cache-key }}-${{ runner.os }} deps/
+    - name: Get deps cache
+      uses: actions/cache@v4
+      with:
+        path: deps/
+        key: deps-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          deps-${{ inputs.cache-key }}-${{ runner.os }}-
 
     - name: Get build cache
-      shell: bash
-      run: ${{ github.action_path }}/localcache.sh restore build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }} _build/${{env.MIX_ENV}}/
+      uses: actions/cache@v4
+      id: build-cache
+      with:
+        path: _build/${{env.MIX_ENV}}/
+        key: build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-
 
     - name: Get Hex cache
-      shell: bash
-      run: ${{ github.action_path }}/localcache.sh restore hex-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }} ~/.hex
+      uses: actions/cache@v4
+      id: hex-cache
+      with:
+        path: ~/.hex
+        key: build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-
 
     # In my experience, I have issues with incremental builds maybe 1 in 100
     # times that are fixed by doing a full recompile.
@@ -131,19 +144,6 @@ runs:
       run: mix compile ${{ inputs.build-flags }}
       shell: sh
       if: inputs.build-app == 'true'
-
-    # Save cache after the build is done
-    - name: Save local deps cache
-      shell: bash
-      run: ${{ github.action_path }}/localcache.sh save deps-${{ inputs.cache-key }}-${{ runner.os }} deps/
-
-    - name: Save local build cache
-      shell: bash
-      run: ${{ github.action_path }}/localcache.sh save build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }} _build/${{env.MIX_ENV}}/
-
-    - name: Save local Hex cache
-      shell: bash
-      run: ${{ github.action_path }}/localcache.sh save hex-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }} ~/.hex
 
     # Don't cache PLTs based on mix.lock hash, as Dialyzer can incrementally update even old ones
     # Cache key based on Elixir & Erlang version (also useful when running in matrix)
