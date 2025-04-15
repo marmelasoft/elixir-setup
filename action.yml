@@ -56,6 +56,11 @@ inputs:
     type: string
     default: "v1"
     description: If you need to reset the cache for some reason, you can change this key.
+  pre-deps-hook:
+    required: false
+    type: string
+    description: If you need a command to run before the deps are fetched, like setting up a repository.
+    default: ""
 
 outputs:
   otp-version:
@@ -76,6 +81,11 @@ runs:
         version-file: ${{ inputs.version-file }}
         elixir-version: ${{ inputs.elixir-version }}
         otp-version: ${{ inputs.otp-version }}
+
+    - name: Run pre-deps hook 
+      if: inputs.pre-deps-hook != ''
+      run: eval "${{ inputs.pre-deps-hook }}"
+      shell: sh
 
     - name: Get deps cache
       uses: actions/cache@v4
