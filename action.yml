@@ -82,13 +82,13 @@ runs:
         elixir-version: ${{ inputs.elixir-version }}
         otp-version: ${{ inputs.otp-version }}
 
-    - name: Run pre-deps hook 
+    - name: Run pre-deps hook
       if: inputs.pre-deps-hook != ''
       run: eval "${{ inputs.pre-deps-hook }}"
       shell: sh
 
     - name: Get deps cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: deps/
         key: deps-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
@@ -96,7 +96,7 @@ runs:
           deps-${{ inputs.cache-key }}-${{ runner.os }}-
 
     - name: Get build cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: build-cache
       with:
         path: _build/${{env.MIX_ENV}}/
@@ -105,25 +105,13 @@ runs:
           build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-
 
     - name: Get Hex cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: hex-cache
       with:
         path: ~/.hex
         key: build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
         restore-keys: |
           build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-
-
-    # In my experience, I have issues with incremental builds maybe 1 in 100
-    # times that are fixed by doing a full recompile.
-    # In order to not waste dev time on such trivial issues (while also reaping
-    # the time savings of incremental builds for *most* day-to-day development),
-    # I force a full recompile only on builds that we retry.
-    - name: Clean to rule out incremental build as a source of flakiness
-      if: github.run_attempt != '1'
-      run: |
-        mix deps.clean --all
-        mix clean
-      shell: sh
 
     - name: Install Rebar
       run: mix local.rebar --force
@@ -158,7 +146,7 @@ runs:
     # Don't cache PLTs based on mix.lock hash, as Dialyzer can incrementally update even old ones
     # Cache key based on Elixir & Erlang version (also useful when running in matrix)
     - name: Restore PLT cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       id: plt-cache
       with:
         key: plt-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}-${{ hashFiles('**/*.ex') }}
