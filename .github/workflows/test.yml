@@ -1,0 +1,143 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Each job checks this repository out into action/ and copies the fixture
+# project to the workspace root, where the action expects a Mix project.
+jobs:
+  cold:
+    name: Version file, empty cache
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: action
+
+      - name: Copy the fixture project
+        run: cp -r action/test/fixture/. .
+
+      # The hook has both kinds of quotes, and reads a variable from the
+      # step's env, like a secret would.
+      - uses: ./action
+        id: setup
+        env:
+          HOOK_SOURCE: step-env
+        with:
+          cache-plts: true
+          pre-deps-hook: echo "it's a \"quoted\" hook from $HOOK_SOURCE" > hook-ran.txt
+
+      - name: Check the outputs
+        env:
+          OTP_VERSION: ${{ steps.setup.outputs.otp-version }}
+          ELIXIR_VERSION: ${{ steps.setup.outputs.elixir-version }}
+          MIX_ENV_OUTPUT: ${{ steps.setup.outputs.mix-env }}
+        run: |
+          set -x
+          [[ "$OTP_VERSION" == *29.0.5* ]]
+          [[ "$ELIXIR_VERSION" == *1.20.3* ]]
+          [[ "$MIX_ENV_OUTPUT" == test ]]
+          [[ "$MIX_ENV" == test ]]
+          grep -qF "it's a \"quoted\" hook from step-env" hook-ran.txt
+          test -d deps/jason
+          test -d _build/test/lib/fixture
+
+      - name: Run the tests
+        run: mix test
+
+      - name: Run Dialyzer
+        run: mix dialyzer
+
+  warm:
+    name: Version file, warm cache
+    needs: cold
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: action
+
+      - name: Copy the fixture project
+        run: cp -r action/test/fixture/. .
+
+      - uses: ./action
+        id: setup
+        with:
+          cache-plts: true
+
+      - name: Check that every cache matched exactly
+        env:
+          DEPS_HIT: ${{ steps.setup.outputs.deps-cache-hit }}
+          BUILD_HIT: ${{ steps.setup.outputs.build-cache-hit }}
+          PLT_HIT: ${{ steps.setup.outputs.plt-cache-hit }}
+        run: |
+          set -x
+          [[ "$DEPS_HIT" == true ]]
+          [[ "$BUILD_HIT" == true ]]
+          [[ "$PLT_HIT" == true ]]
+
+      - name: Run the tests
+        run: mix test
+
+  explicit-versions:
+    name: Explicit versions and Mix environment
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: action
+
+      # The fixture's .tool-versions stays, to check the action ignores it
+      # when versions are given. setup-beam fails if it gets both.
+      - name: Copy the fixture project
+        run: cp -r action/test/fixture/. .
+
+      - uses: ./action
+        id: setup
+        with:
+          otp-version: "29"
+          elixir-version: "1.20"
+          mix-env: dev
+
+      - name: Check the outputs
+        env:
+          ELIXIR_VERSION: ${{ steps.setup.outputs.elixir-version }}
+        run: |
+          set -x
+          [[ "$ELIXIR_VERSION" == *1.20.* ]]
+          [[ "$MIX_ENV" == dev ]]
+          test -d _build/dev/lib/fixture
+
+  no-versions:
+    name: No versions anywhere
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: action
+
+      - name: Copy the fixture project, without its .tool-versions
+        run: |
+          cp -r action/test/fixture/. .
+          rm .tool-versions
+
+      - uses: ./action
+        id: setup
+        continue-on-error: true
+
+      - name: Check that the action failed
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+        run: '[[ "$OUTCOME" == failure ]]'

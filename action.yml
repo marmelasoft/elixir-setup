@@ -1,5 +1,5 @@
 name: Setup Elixir Project
-description: Configures Elixir, fetches dependencies, and manages build caching.
+description: Installs Erlang and Elixir, fetches and compiles dependencies, and caches the build between runs.
 
 branding:
   icon: "droplet"
@@ -7,161 +7,262 @@ branding:
 
 inputs:
   otp-version:
-    type: string
-    description: OTP version to set up
+    description: >-
+      Erlang/OTP version to install. Leave it and `elixir-version` empty to
+      read both from a version file.
+    required: false
+    default: ""
   elixir-version:
-    type: string
-    description: Elixir version to set up
+    description: >-
+      Elixir version to install. Leave it and `otp-version` empty to read both
+      from a version file.
+    required: false
+    default: ""
   version-file:
-    type: string
-    description: a versions file (e.g. as used by `asdf`), which defines inputs
+    description: >-
+      File to read the versions from: `.tool-versions` (asdf) or `mise.toml`
+      (mise). When it is empty and no versions are given, the action looks for
+      `.tool-versions`, then `mise.toml`.
+    required: false
+    default: ""
   version-type:
-    type: string
-    description: strict means the versions are take as-are; loose means we try
-      to guess versions based on semver rules
-
-  # Optional inputs
+    description: >-
+      `strict` takes versions as written. `loose` picks the latest version that
+      matches. Defaults to `loose`, and is always `strict` with a version file.
+    required: false
+    default: ""
+  mix-env:
+    description: >-
+      Mix environment to compile and cache. Defaults to the `MIX_ENV` the
+      workflow sets, or `test`. The rest of the job gets it as `MIX_ENV`.
+    required: false
+    default: ""
   build-deps:
+    description: Compile the dependencies.
     required: false
-    type: boolean
-    default: true
-    description: True if we should compile dependencies
+    default: "true"
   build-app:
+    description: Compile the application.
     required: false
-    type: boolean
-    default: true
-    description: True if we should compile the application itself
+    default: "true"
   build-flags:
+    description: Flags for `mix compile`.
     required: false
-    type: string
     default: "--all-warnings --warnings-as-errors"
-    description: Flags to pass to mix compile
-  cache-plts:
-    required: false
-    type: boolean
-    default: false
-    description: By default, we will not cache dialyzer PLTs files
-  install-rebar:
-    required: false
-    type: boolean
-    default: true
-    description: By default, we will install Rebar (mix local.rebar --force).
   install-hex:
+    description: Install Hex.
     required: false
-    type: boolean
-    default: true
-    description: By default, we will install Hex (mix local.hex --force).
+    default: "true"
+  install-rebar:
+    description: Install Rebar.
+    required: false
+    default: "true"
+  cache-plts:
+    description: >-
+      Build and cache the Dialyzer PLTs. Point `plt_core_path` and
+      `plt_local_path` in your Dialyzer config at `plts-path`.
+    required: false
+    default: "false"
+  plts-path:
+    description: Folder that holds the Dialyzer PLTs.
+    required: false
+    default: "priv/plts"
   cache-key:
+    description: Change it to start every cache from scratch.
     required: false
-    type: string
     default: "v1"
-    description: If you need to reset the cache for some reason, you can change this key.
   pre-deps-hook:
+    description: >-
+      Shell command to run before fetching the dependencies, such as adding a
+      private Hex repository.
     required: false
-    type: string
-    description: If you need a command to run before the deps are fetched, like setting up a repository.
     default: ""
 
 outputs:
   otp-version:
-    description: "Exact OTP version selected by the BEAM setup step"
+    description: Exact Erlang/OTP version installed.
     value: ${{ steps.beam.outputs.otp-version }}
   elixir-version:
-    description: "Exact Elixir version selected by the BEAM setup step"
+    description: Exact Elixir version installed.
     value: ${{ steps.beam.outputs.elixir-version }}
+  mix-env:
+    description: Mix environment the action compiled and cached.
+    value: ${{ steps.config.outputs.mix-env }}
+  deps-cache-hit:
+    description: "`true` when the deps cache matched `mix.lock` exactly."
+    value: ${{ steps.deps-cache.outputs.cache-hit }}
+  build-cache-hit:
+    description: "`true` when the build cache matched this commit exactly."
+    value: ${{ steps.build-cache.outputs.cache-hit }}
+  plt-cache-hit:
+    description: "`true` when the PLT cache matched `mix.lock` exactly."
+    value: ${{ steps.plt-cache.outputs.cache-hit }}
 
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Setup Elixir
-      uses: erlef/setup-beam@v1
+    - name: Pick versions and Mix environment
+      id: config
+      shell: bash
+      env:
+        OTP_VERSION: ${{ inputs.otp-version }}
+        ELIXIR_VERSION: ${{ inputs.elixir-version }}
+        VERSION_FILE: ${{ inputs.version-file }}
+        VERSION_TYPE: ${{ inputs.version-type }}
+        MIX_ENV_INPUT: ${{ inputs.mix-env }}
+      run: |
+        if [[ -z "$VERSION_FILE" && -z "$OTP_VERSION" && -z "$ELIXIR_VERSION" ]]; then
+          for file in .tool-versions mise.toml; do
+            if [[ -f "$file" ]]; then
+              VERSION_FILE=$file
+              break
+            fi
+          done
+
+          if [[ -z "$VERSION_FILE" ]]; then
+            echo "::error::Set otp-version and elixir-version, or add a .tool-versions or mise.toml file."
+            exit 1
+          fi
+        fi
+
+        # setup-beam refuses a version file unless the versions are strict.
+        if [[ -n "$VERSION_FILE" ]]; then
+          VERSION_TYPE=strict
+        fi
+
+        mix_env="${MIX_ENV_INPUT:-${MIX_ENV:-test}}"
+        echo "MIX_ENV=$mix_env" >> "$GITHUB_ENV"
+
+        {
+          echo "version-file=$VERSION_FILE"
+          echo "version-type=${VERSION_TYPE:-loose}"
+          echo "mix-env=$mix_env"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Install Erlang and Elixir
       id: beam
+      uses: erlef/setup-beam@v1
       with:
-        version-type: ${{ inputs.version-type }}
-        version-file: ${{ inputs.version-file }}
-        elixir-version: ${{ inputs.elixir-version }}
         otp-version: ${{ inputs.otp-version }}
+        elixir-version: ${{ inputs.elixir-version }}
+        version-file: ${{ steps.config.outputs.version-file }}
+        version-type: ${{ steps.config.outputs.version-type }}
+        install-hex: ${{ inputs.install-hex }}
+        install-rebar: ${{ inputs.install-rebar }}
 
     - name: Run pre-deps hook
       if: inputs.pre-deps-hook != ''
-      run: eval "${{ inputs.pre-deps-hook }}"
-      shell: sh
+      shell: bash
+      env:
+        PRE_DEPS_HOOK: ${{ inputs.pre-deps-hook }}
+      run: eval "$PRE_DEPS_HOOK"
 
-    - name: Get deps cache
-      uses: actions/cache@v5
+    - name: Build cache keys
+      id: keys
+      shell: bash
+      env:
+        CACHE_KEY: ${{ inputs.cache-key }}
+        OTP_VERSION: ${{ steps.beam.outputs.otp-version }}
+        ELIXIR_VERSION: ${{ steps.beam.outputs.elixir-version }}
+        MIX_ENV: ${{ steps.config.outputs.mix-env }}
+        LOCK_HASH: ${{ hashFiles('mix.lock') }}
+      run: |
+        runner="${RUNNER_OS}-${RUNNER_ARCH}"
+        beam="otp-${OTP_VERSION}-elixir-${ELIXIR_VERSION}-${MIX_ENV}"
+        {
+          echo "lock=${LOCK_HASH:-no-lock}"
+          echo "deps=deps-${CACHE_KEY}-${runner}"
+          echo "build=build-${CACHE_KEY}-${runner}-${beam}"
+          echo "plt=plt-${CACHE_KEY}-${runner}-${beam}"
+        } >> "$GITHUB_OUTPUT"
+
+    # deps/ holds only sources, so it does not depend on the Erlang or Elixir
+    # version, and it only changes with mix.lock.
+    - name: Restore deps cache
+      id: deps-cache
+      uses: actions/cache/restore@v5
       with:
-        path: deps/
-        key: deps-${{ inputs.cache-key }}-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          deps-${{ inputs.cache-key }}-${{ runner.os }}-
+        path: deps
+        key: ${{ steps.keys.outputs.deps }}-${{ steps.keys.outputs.lock }}
+        restore-keys: ${{ steps.keys.outputs.deps }}-
 
-    - name: Get build cache
-      uses: actions/cache@v5
+    # The key ends with the commit, so each new commit saves a fresh build and
+    # the next run only compiles what changed since. It falls back to the
+    # latest build for the same mix.lock, then to any build.
+    - name: Restore build cache
       id: build-cache
+      uses: actions/cache/restore@v5
       with:
-        path: _build/${{env.MIX_ENV}}/
-        key: build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-${{ hashFiles('**/mix.lock') }}
+        path: _build/${{ steps.config.outputs.mix-env }}
+        key: ${{ steps.keys.outputs.build }}-${{ steps.keys.outputs.lock }}-${{ github.sha }}
         restore-keys: |
-          build-${{ inputs.cache-key }}-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ env.MIX_ENV }}-
+          ${{ steps.keys.outputs.build }}-${{ steps.keys.outputs.lock }}-
+          ${{ steps.keys.outputs.build }}-
 
-    - name: Get Hex cache
-      uses: actions/cache@v5
-      id: hex-cache
-      with:
-        path: ~/.hex
-        key: build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          build-${{ runner.os }}-${{ inputs.otp-version }}-${{ inputs.elixir-version }}-
-
-    - name: Install Rebar
-      run: mix local.rebar --force
-      shell: sh
-      if: inputs.install-rebar == 'true'
-
-    - name: Install Hex
-      run: mix local.hex --force
-      shell: sh
-      if: inputs.install-hex == 'true'
-
-    - name: Install Dependencies
+    - name: Fetch dependencies
+      if: steps.deps-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        MIX_ENV: ${{ steps.config.outputs.mix-env }}
       run: mix deps.get
-      shell: sh
 
-    # Normally we'd use `mix deps.compile` here, however that incurs a large
-    # performance penalty when the dependencies are already fully compiled:
-    # https://elixirforum.com/t/github-action-cache-elixir-always-recompiles-dependencies-elixir-1-13-3/45994/12
-    #
-    # Accoring to Jose Valim at the above link `mix loadpaths` will check and
-    # compile missing dependencies
-    - name: Compile Dependencies
-      run: mix loadpaths
-      shell: sh
-      if: inputs.build-deps == 'true'
-
-    - name: Compile Application
-      run: mix compile ${{ inputs.build-flags }}
-      shell: sh
-      if: inputs.build-app == 'true'
-
-    # Don't cache PLTs based on mix.lock hash, as Dialyzer can incrementally update even old ones
-    # Cache key based on Elixir & Erlang version (also useful when running in matrix)
-    - name: Restore PLT cache
-      uses: actions/cache@v5
-      id: plt-cache
+    # Saved now, not at the end of the job, so a failed job still keeps it.
+    - name: Save deps cache
+      if: steps.deps-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
       with:
-        key: plt-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}-${{ hashFiles('**/*.ex') }}
-        restore-keys: |
-          plt-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}-${{ hashFiles('**/*.ex') }}
-          plt-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}-
-          plt-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
-          plt-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-
-        path: priv/plts
-      if: inputs.cache-plts == 'true'
+        path: deps
+        key: ${{ steps.deps-cache.outputs.cache-primary-key }}
 
-    # Create PLTs if no cache was found.
-    # Always rebuild PLT when a job is retried
-    # (If they were cached at all, they'll be updated when we run mix dialyzer with no flags.)
-    - name: Create PLTs
-      if: (steps.plt-cache.outputs.cache-hit != 'true' || github.run_attempt != '1') && inputs.cache-plts == 'true'
-      shell: sh
+    # `mix deps.compile` rebuilds every dependency, even when all of them are
+    # compiled. `mix loadpaths` only compiles the missing ones:
+    # https://elixirforum.com/t/github-action-cache-elixir-always-recompiles-dependencies-elixir-1-13-3/45994/12
+    - name: Compile dependencies
+      if: inputs.build-deps == 'true'
+      shell: bash
+      env:
+        MIX_ENV: ${{ steps.config.outputs.mix-env }}
+      run: mix loadpaths
+
+    - name: Compile application
+      if: inputs.build-app == 'true'
+      shell: bash
+      env:
+        MIX_ENV: ${{ steps.config.outputs.mix-env }}
+        BUILD_FLAGS: ${{ inputs.build-flags }}
+      run: mix compile $BUILD_FLAGS
+
+    # Saved now, before the tests run, so a failed test still keeps the build.
+    - name: Save build cache
+      if: steps.build-cache.outputs.cache-hit != 'true' && (inputs.build-deps == 'true' || inputs.build-app == 'true')
+      uses: actions/cache/save@v5
+      with:
+        path: _build/${{ steps.config.outputs.mix-env }}
+        key: ${{ steps.build-cache.outputs.cache-primary-key }}
+
+    # PLTs only depend on the dependencies, and Dialyzer brings an old PLT up
+    # to date, so any PLT for the same Erlang and Elixir is a good start.
+    - name: Restore PLT cache
+      id: plt-cache
+      if: inputs.cache-plts == 'true'
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ inputs.plts-path }}
+        key: ${{ steps.keys.outputs.plt }}-${{ steps.keys.outputs.lock }}
+        restore-keys: ${{ steps.keys.outputs.plt }}-
+
+    # A retried job rebuilds the PLTs, in case a broken one made it fail.
+    - name: Build PLTs
+      if: inputs.cache-plts == 'true' && (steps.plt-cache.outputs.cache-hit != 'true' || github.run_attempt != '1')
+      shell: bash
+      env:
+        MIX_ENV: ${{ steps.config.outputs.mix-env }}
       run: mix dialyzer --plt
+
+    # Saved now, so Dialyzer warnings later in the job don't lose the PLTs.
+    - name: Save PLT cache
+      if: inputs.cache-plts == 'true' && steps.plt-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ inputs.plts-path }}
+        key: ${{ steps.plt-cache.outputs.cache-primary-key }}
