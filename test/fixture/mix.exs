@@ -21,6 +21,8 @@ defmodule Fixture.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
+      # A NIF built with elixir_make, which writes its .so into deps/.
+      {:picosat_elixir, "~> 0.2"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
