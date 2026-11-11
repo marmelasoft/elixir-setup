@@ -88,11 +88,8 @@ outputs:
   mix-env:
     description: Mix environment the action compiled and cached.
     value: ${{ steps.config.outputs.mix-env }}
-  deps-cache-hit:
-    description: "`true` when the deps cache matched `mix.lock` exactly."
-    value: ${{ steps.deps-cache.outputs.cache-hit }}
   build-cache-hit:
-    description: "`true` when the build cache matched this commit exactly."
+    description: "`true` when the cache of `deps/` and `_build/` matched this commit exactly."
     value: ${{ steps.build-cache.outputs.cache-hit }}
   plt-cache-hit:
     description: "`true` when the PLT cache matched `mix.lock` exactly."
@@ -171,21 +168,16 @@ runs:
         beam="otp-${OTP_VERSION}-elixir-${ELIXIR_VERSION}-${MIX_ENV}"
         {
           echo "lock=${LOCK_HASH:-no-lock}"
-          echo "deps=deps-${CACHE_KEY}-${runner}"
           echo "build=build-${CACHE_KEY}-${runner}-${beam}"
           echo "plt=plt-${CACHE_KEY}-${runner}-${beam}"
         } >> "$GITHUB_OUTPUT"
 
-    # deps/ holds only sources, so it does not depend on the Erlang or Elixir
-    # version, and it only changes with mix.lock.
-    - name: Restore deps cache
-      id: deps-cache
-      uses: actions/cache/restore@v5
-      with:
-        path: deps
-        key: ${{ steps.keys.outputs.deps }}-${{ steps.keys.outputs.lock }}
-        restore-keys: ${{ steps.keys.outputs.deps }}-
-
+    # deps/ and _build/ share one cache, because each needs the other:
+    # _build/ links to each dependency's priv/ in deps/, and compiling writes
+    # into deps/ (NIFs like picosat, rebar3 state, lexers made from .xrl).
+    # Cached apart, a restored _build/ can claim a NIF is built while deps/
+    # has none.
+    #
     # The key ends with the commit, so each new commit saves a fresh build and
     # the next run only compiles what changed since. It falls back to the
     # latest build for the same mix.lock, then to any build.
@@ -193,26 +185,21 @@ runs:
       id: build-cache
       uses: actions/cache/restore@v5
       with:
-        path: _build/${{ steps.config.outputs.mix-env }}
+        path: |
+          deps
+          _build/${{ steps.config.outputs.mix-env }}
         key: ${{ steps.keys.outputs.build }}-${{ steps.keys.outputs.lock }}-${{ github.sha }}
         restore-keys: |
           ${{ steps.keys.outputs.build }}-${{ steps.keys.outputs.lock }}-
           ${{ steps.keys.outputs.build }}-
 
+    # A build saved with the same mix.lock already has every dependency.
     - name: Fetch dependencies
-      if: steps.deps-cache.outputs.cache-hit != 'true'
+      if: ${{ !startsWith(steps.build-cache.outputs.cache-matched-key, format('{0}-{1}-', steps.keys.outputs.build, steps.keys.outputs.lock)) }}
       shell: bash
       env:
         MIX_ENV: ${{ steps.config.outputs.mix-env }}
       run: mix deps.get
-
-    # Saved now, not at the end of the job, so a failed job still keeps it.
-    - name: Save deps cache
-      if: steps.deps-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v5
-      with:
-        path: deps
-        key: ${{ steps.deps-cache.outputs.cache-primary-key }}
 
     # `mix deps.compile` rebuilds every dependency, even when all of them are
     # compiled. `mix loadpaths` only compiles the missing ones:
@@ -234,10 +221,12 @@ runs:
 
     # Saved now, before the tests run, so a failed test still keeps the build.
     - name: Save build cache
-      if: steps.build-cache.outputs.cache-hit != 'true' && (inputs.build-deps == 'true' || inputs.build-app == 'true')
+      if: steps.build-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: _build/${{ steps.config.outputs.mix-env }}
+        path: |
+          deps
+          _build/${{ steps.config.outputs.mix-env }}
         key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
     # PLTs only depend on the dependencies, and Dialyzer brings an old PLT up
