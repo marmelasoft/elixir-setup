@@ -1,0 +1,21 @@
+Cover compiling modules ...
+Running ExUnit with seed: 63597, max_cases: 4
+Excluding tags: [:e2e]
+
+..........
+Finished in 0.4 seconds (0.3s async, 0.1s sync)
+
+Result: 10 passed
+
+Generating cover results ...
+
+| Percentage | Module                                   |
+|------------|------------------------------------------|
+|      0.00% | Inspect.Fixture.Accounts.Token           |
+|     89.47% | Fixture.Totals.RestoreReservations       |
+|     50.00% | Totals.Report                            |
+|    100.00% | FixtureWeb.PageController                |
+|------------|------------------------------------------|
+|     86.04% | Total                                    |
+
+Generated HTML coverage results in "cover" directory

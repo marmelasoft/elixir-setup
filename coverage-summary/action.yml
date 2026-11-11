@@ -1,0 +1,62 @@
+name: Elixir Coverage Summary
+description: Adds the coverage table that `mix test --cover` prints to the job summary.
+
+branding:
+  icon: "droplet"
+  color: "purple"
+
+inputs:
+  file:
+    description: File with the output of `mix test --cover`, such as one written with `tee`.
+    required: false
+    default: coverage.log
+  title:
+    description: Heading above the table.
+    required: false
+    default: "💧 Coverage"
+
+outputs:
+  total:
+    description: Total coverage, such as `86.04%`. Empty when the file has no coverage table.
+    value: ${{ steps.summary.outputs.total }}
+
+runs:
+  using: composite
+  steps:
+    - name: Write the coverage summary
+      id: summary
+      shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        if [[ ! -f "$FILE" ]]; then
+          echo "There is no $FILE, so there is no coverage summary."
+          exit 0
+        fi
+
+        # Keep the table from its header to the Total row. Mix draws a line
+        # under the header and one above Total. The first becomes the
+        # Markdown header line, with the numbers aligned right. The second goes.
+        table=$(
+          sed 's/\x1b\[[0-9;]*m//g' "$FILE" |
+            awk '/^\| Percentage \|/, /^\| *[0-9.]+% \| Total *\|/ {
+              if (!/^\|-/) print
+              else if (!seen++) print "|---:|:---|"
+            }'
+        )
+
+        if [[ -z "$table" ]]; then
+          echo "::warning::$FILE has no coverage table. Run mix test with --cover."
+          exit 0
+        fi
+
+        total=$(awk -F '|' '$3 ~ /^ *Total *$/ { gsub(/ /, "", $2); print $2 }' <<< "$table")
+
+        {
+          echo "### $TITLE"
+          echo
+          echo "$table"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        echo "total=$total" >> "$GITHUB_OUTPUT"
