@@ -50,7 +50,16 @@ jobs:
           test -d _build/test/lib/fixture
 
       - name: Run the tests
-        run: mix test
+        shell: bash
+        run: mix test --cover | tee coverage.log
+
+      - uses: ./action/coverage-summary
+        id: coverage
+
+      - name: Check the coverage total
+        env:
+          TOTAL: ${{ steps.coverage.outputs.total }}
+        run: '[[ "$TOTAL" == "100.00%" ]]'
 
       - name: Run Dialyzer
         run: mix dialyzer
@@ -140,3 +149,30 @@ jobs:
         env:
           OUTCOME: ${{ steps.setup.outcome }}
         run: '[[ "$OUTCOME" == failure ]]'
+
+  coverage-summary:
+    name: Coverage summary
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./coverage-summary
+        id: sample
+        with:
+          file: test/coverage-summary/coverage.log
+          title: Fixture coverage
+
+      - uses: ./coverage-summary
+        id: missing
+        with:
+          file: missing.log
+
+      - name: Check the totals
+        env:
+          SAMPLE_TOTAL: ${{ steps.sample.outputs.total }}
+          MISSING_TOTAL: ${{ steps.missing.outputs.total }}
+        run: |
+          set -x
+          [[ "$SAMPLE_TOTAL" == "86.04%" ]]
+          [[ -z "$MISSING_TOTAL" ]]

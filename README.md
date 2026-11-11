@@ -133,6 +133,33 @@ end up in the command itself:
     pre-deps-hook: mix hex.organization auth acme --key "$HEX_ORG_KEY"
 ```
 
+## Coverage summary
+
+`coverage-summary` is a second action in this repository. It copies the
+coverage table that `mix test --cover` prints into the job summary, so you see
+it on the run's page.
+
+```yaml
+- name: Run the tests
+  shell: bash # pipefail, so failing tests still fail the step
+  run: mix test --cover | tee coverage.log
+
+- uses: marmelasoft/elixir-setup/coverage-summary@v1
+  if: ${{ !cancelled() }}
+```
+
+It does nothing when the file is missing, for example when an earlier step
+failed before the tests ran.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `file` | `coverage.log` | File with the output of `mix test --cover`. |
+| `title` | `💧 Coverage` | Heading above the table. |
+
+| Output | Description |
+| --- | --- |
+| `total` | Total coverage, such as `86.04%`. Empty when the file has no coverage table. |
+
 ## Releasing
 
 Publish a GitHub release with a tag like `v1.2.3`. The release workflow then
