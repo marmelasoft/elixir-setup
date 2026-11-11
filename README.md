@@ -19,7 +19,7 @@ With no inputs, the action reads the Erlang and Elixir versions from
 1. Installs Erlang, Elixir, Hex and Rebar with
    [`erlef/setup-beam`](https://github.com/erlef/setup-beam).
 2. Restores `deps/` and `_build/<env>/` from the cache.
-3. Runs `mix deps.get`, unless `deps/` matched `mix.lock` exactly.
+3. Runs `mix deps.get`, unless the cache was saved with the same `mix.lock`.
 4. Compiles the dependencies with `mix loadpaths`, then the app with
    `mix compile --all-warnings --warnings-as-errors`.
 5. Saves the caches right away, so they are kept even when a later step
@@ -31,13 +31,17 @@ With no inputs, the action reads the Erlang and Elixir versions from
 
 | Cache | Path | Key changes when | Falls back to |
 | --- | --- | --- | --- |
-| Deps | `deps/` | `mix.lock` changes | the latest deps |
-| Build | `_build/<env>/` | every commit | the latest build for the same `mix.lock`, then any build |
+| Build | `deps/` and `_build/<env>/` | every commit | the latest build for the same `mix.lock`, then any build |
 | PLTs | `priv/plts/` | `mix.lock` changes | the latest PLTs |
 
 The build and PLT keys also hold the exact Erlang and Elixir versions and the
 Mix environment. A new version starts a new build. Each commit saves a fresh
 build, so the next run compiles only the files that changed since.
+
+`deps/` and `_build/` share one cache because each needs the other. `_build/`
+links to each dependency's `priv/` folder in `deps/`, and compiling some
+dependencies writes into `deps/`, such as a NIF's `.so` file. Cached apart,
+they can get out of step, and a NIF fails to load.
 
 To throw away every cache, change `cache-key`.
 
@@ -67,8 +71,7 @@ To throw away every cache, change `cache-key`.
 | `otp-version` | Exact Erlang/OTP version installed. |
 | `elixir-version` | Exact Elixir version installed. |
 | `mix-env` | Mix environment the action compiled and cached. |
-| `deps-cache-hit` | `true` when the deps cache matched `mix.lock` exactly. |
-| `build-cache-hit` | `true` when the build cache matched this commit exactly. |
+| `build-cache-hit` | `true` when the cache of `deps/` and `_build/` matched this commit exactly. |
 | `plt-cache-hit` | `true` when the PLT cache matched `mix.lock` exactly. |
 
 ## Examples

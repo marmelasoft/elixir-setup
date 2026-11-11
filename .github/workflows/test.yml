@@ -84,15 +84,14 @@ jobs:
 
       - name: Check that every cache matched exactly
         env:
-          DEPS_HIT: ${{ steps.setup.outputs.deps-cache-hit }}
           BUILD_HIT: ${{ steps.setup.outputs.build-cache-hit }}
           PLT_HIT: ${{ steps.setup.outputs.plt-cache-hit }}
         run: |
           set -x
-          [[ "$DEPS_HIT" == true ]]
           [[ "$BUILD_HIT" == true ]]
           [[ "$PLT_HIT" == true ]]
 
+      # The fixture's NIF must load from the cached build.
       - name: Run the tests
         run: mix test
 
